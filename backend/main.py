@@ -21,10 +21,10 @@ async def serve_index():
 @app.post("/chat")
 async def chat_endpoint(chat: ChatRequest):
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response = openai.chat.completions.create(
+            model="gpt-4o",
             messages=[{"role": "user", "content": chat.message}]
         )
-        return {"response": response.choices[0].message["content"]}
+        return {"response": response.choices[0].message.content}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
