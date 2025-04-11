@@ -38,7 +38,7 @@ async def chat_endpoint(chat: ChatRequest):
     try:
         logging.info("try to connect...")
         async with sse_client(
-            url="http://localhost:8001/sse"
+            url="http://server.mcp.local:8080/sse"
         ) as (read, write):
             logging.info("Connected.")
             async with ClientSession(read, write) as session:
