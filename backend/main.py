@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 import subprocess
+from ping3 import ping
 from fastapi import FastAPI
 from mcp.client.session import ClientSession
 from mcp.client.sse import  sse_client
@@ -12,15 +13,6 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     message: str
 
-#@asynccontextmanager
-#async def lifespan(app: FastAPI):
-#    persistent_client = MultiServerMCPClient(servers_config)
-#    await persistent_client.__aenter__()
-#    app.state.persistent_client = persistent_client
-#    yield
-#    await app.state.persistent_client.__aexit__(None, None, None)
-
-#app = FastAPI(lifespan=lifespan)
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(levelname)s:     [applogs] %(message)s')
@@ -34,11 +26,10 @@ async def serve_index():
 
 @app.post("/chat")
 async def chat_endpoint(chat: ChatRequest):
-    
     try:
         logging.info("try to connect...")
         async with sse_client(
-            url="http://server.mcp.local:8080/sse"
+            url="http://mcp-server:8001/sse"
         ) as (read, write):
             logging.info("Connected.")
             async with ClientSession(read, write) as session:
@@ -47,19 +38,9 @@ async def chat_endpoint(chat: ChatRequest):
                 #List available prompts
                 tools = await session.list_tools()
                 logging.info(tools)
-        
-        #agent = Agent(
-        #    name="Assistant",
-        #    instructions="Use the tools to answer the questions.",
-        #    mcp_servers=[mcp_server],
-        #    model_settings=ModelSettings(tool_choice="required"),
-        #)
 
-        #print(f"Running: {chat.message}")
-        #result = await Runner.run(starting_agent=agent, input=chat.message)
-        #print(result.final_output)
-        
         return {"response": "OK"}
+
     except Exception as e_group:
         errors = [str(e) for e in e_group.exceptions]
         return JSONResponse(status_code=500, content={"error": errors})
