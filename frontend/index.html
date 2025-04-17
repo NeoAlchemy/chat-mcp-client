@@ -3,11 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <title>OpenAI Chatbot</title>
-    <script>
-        async function sendMessage() {
-            const userMessage = document.getElementById("message").value;
-            const responseDiv = document.getElementById("response");
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="/static/chat-ui.css">
+</head>
+<body>
+<div class="chat-container">
+    <div id="chat-history" class="chat-history"></div>
 
+    <div class="chat-input">
+        <input id="message" type="text" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendMessage()">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
+<script>
+    const userAvatar = "https://api.dicebear.com/9.x/adventurer/svg?size=80&seed=Maria"; // Human-like avatar
+    const botAvatar = "https://api.dicebear.com/9.x/bottts/svg?size=80&seed=Ryan";
+
+    function getTimestamp() {
+        const now = new Date();
+        return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById("message");
+        const chatHistory = document.getElementById("chat-history");
+        const userMessage = input.value.trim();
+        if (!userMessage) return;
+
+        // User message
+        const userBubble = createMessage(userMessage, userAvatar, "user");
+        chatHistory.appendChild(userBubble);
+
+        // Typing indicator
+        const typingBubble = createTypingIndicator("dots");
+        chatHistory.appendChild(typingBubble);
+        scrollToBottom();
+
+        input.value = "";
+
+        try {
             const response = await fetch("/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -15,14 +50,115 @@
             });
 
             const data = await response.json();
-            responseDiv.innerText = data.response;
+
+            if (!response.ok || !data.response) {
+                throw new Error("Invalid response from server");
+            }
+
+            const markdown = marked.parse(data.response || "⚠️ No response");
+            const botBubble = createMessage(markdown, botAvatar, "bot", true);
+
+            chatHistory.replaceChild(botBubble, typingBubble);
+        } catch (error) {
+            // Remove typing bubble before showing error
+            chatHistory.removeChild(typingBubble);
+
+            // Insert status/error message
+            insertStatusMessage("❌ Failed to fetch response.");
+            console.error("Fetch error:", error);
         }
-    </script>
-</head>
-<body>
-    <h1>OpenAI Chatbot</h1>
-    <input id="message" type="text" placeholder="Say something..." style="width: 300px;">
-    <button onclick="sendMessage()">Send</button>
-    <div id="response" style="margin-top: 20px;"></div>
+
+        scrollToBottom();
+    }
+
+
+    function createMessage(content, avatarUrl, role, isHTML = false) {
+        const wrapper = document.createElement("div");
+        wrapper.className = `chat-message ${role}`;
+
+        const avatar = document.createElement("img");
+        avatar.src = avatarUrl;
+        avatar.className = "avatar";
+
+        const container = document.createElement("div");
+        container.className = "message-container";
+
+        const bubble = document.createElement("div");
+        bubble.className = "message-bubble";
+        if (isHTML) {
+            bubble.innerHTML = content;
+        } else {
+            bubble.textContent = content;
+        }
+
+        const timestamp = document.createElement("span");
+        timestamp.className = "timestamp";
+        timestamp.textContent = getTimestamp();
+
+        container.appendChild(bubble);
+        container.appendChild(timestamp);
+
+        wrapper.appendChild(avatar);
+        wrapper.appendChild(container);
+        return wrapper;
+    }
+
+    function createTypingIndicator(style = "gradient") {
+        const container = document.createElement("div");
+        container.className = "message bot";
+
+        const avatar = document.createElement("img");
+        avatar.className = "avatar";
+        avatar.src = botAvatar;
+
+        let bubble;
+
+        if (style === "dots") {
+            bubble = document.createElement("div");
+            bubble.className = "typing-indicator";
+            for (let i = 0; i < 3; i++) {
+                const dot = document.createElement("span");
+                dot.className = "typing-dot";
+                bubble.appendChild(dot);
+            }
+        } else if (style === "waveform") {
+            bubble = document.createElement("div");
+            bubble.className = "waveform";
+            for (let i = 0; i < 3; i++) {
+                const bar = document.createElement("div");
+                bar.className = "bar";
+                bubble.appendChild(bar);
+            }
+        } else {
+            // Gradient shimmer style
+            bubble = document.createElement("div");
+            bubble.className = "typing-gradient";
+            bubble.textContent = "Typing";
+            const dots = document.createElement("span");
+            dots.textContent = "...";
+            bubble.appendChild(dots);
+        }
+
+        container.appendChild(avatar);
+        container.appendChild(bubble);
+        return container;
+    }
+
+
+    function scrollToBottom() {
+        const chatHistory = document.getElementById("chat-history");
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    function insertStatusMessage(text) {
+        const chatHistory = document.getElementById("chat-history");
+        const status = document.createElement("div");
+        status.className = "status-message";
+        status.textContent = text;
+        chatHistory.appendChild(status);
+        scrollToBottom();
+        return status;
+    }
+</script>
 </body>
 </html>

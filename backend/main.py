@@ -52,13 +52,15 @@ async def chat_endpoint(chat: ChatRequest):
             },
         ) as mcp_server:
             trace_id = gen_trace_id()
-            with trace(workflow_name="SSE Example", trace_id=trace_id):
+            with trace(workflow_name="Weather Tool", trace_id=trace_id):
                 print(f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}\n")
                 agent = Agent(
                     name="Assistant",
-                    instructions="Use the tools to answer the questions.",
+                    instructions="Only use tools when absolutely necessary to complete \
+                        the user's request. If the answer is available in context or \
+                        from your training, respond directly without tools.",
                     mcp_servers=[mcp_server],
-                    model_settings=ModelSettings(tool_choice="required"),
+                    model_settings=ModelSettings(tool_choice="auto"),
                 )
                 result = await Runner.run(starting_agent=agent, input=chat.message)
 
