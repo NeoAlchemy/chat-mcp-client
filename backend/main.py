@@ -60,9 +60,9 @@ async def chat_endpoint(chat: ChatRequest):
                     mcp_servers=[mcp_server],
                     model_settings=ModelSettings(tool_choice="required"),
                 )
-                result = await Runner.run(starting_agent=agent, input=ChatRequest.message)
+                result = await Runner.run(starting_agent=agent, input=chat.message)
 
-        return {"response": result}
+        return {"response": result.final_output}
 
     except Exception as e:
         logging.info(f"Exception: {e}")
