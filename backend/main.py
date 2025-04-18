@@ -1,11 +1,13 @@
-import asyncio
 import logging
 import sys
-import subprocess
+import os
 from ping3 import ping
 
 #from mcp.client.session import ClientSession
 #from mcp.client.sse import  sse_client
+
+from openai import OpenAI
+
 
 from agents import Agent, Runner, gen_trace_id, trace
 from agents.mcp import MCPServer, MCPServerSse
@@ -18,6 +20,7 @@ from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     message: str
+    type: str
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
@@ -45,24 +48,53 @@ async def chat_endpoint(chat: ChatRequest):
         #        tools = await session.list_tools()
         #        logging.info(tools)
 
-        async with MCPServerSse(
-            name="SSE Python Server",
-            params={
-                "url": "http://mcp-server:8001/sse",
-            },
-        ) as mcp_server:
-            trace_id = gen_trace_id()
-            with trace(workflow_name="Weather Tool", trace_id=trace_id):
-                print(f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}\n")
-                agent = Agent(
-                    name="Assistant",
-                    instructions="Only use tools when absolutely necessary to complete \
-                        the user's request. If the answer is available in context or \
-                        from your training, respond directly without tools.",
-                    mcp_servers=[mcp_server],
-                    model_settings=ModelSettings(tool_choice="auto"),
-                )
-                result = await Runner.run(starting_agent=agent, input=chat.message)
+        # ======== TOOLS ===========
+        if chat.type=="tools":
+            async with MCPServerSse(
+                name="SSE Python Server",
+                params={
+                    "url": "http://mcp-server:8001/sse",
+                },
+            ) as mcp_server:
+                trace_id = gen_trace_id()
+                with trace(workflow_name="Weather Tool", trace_id=trace_id):
+                    print(f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}\n")  
+                    agent = Agent(
+                        name="Assistant",
+                        instructions="Only use tools when absolutely necessary to complete \
+                            the user's request. If the answer is available in context or \
+                            from your training, respond directly without tools.",
+                        mcp_servers=[mcp_server],
+                        model_settings=ModelSettings(tool_choice="auto"),
+                    )
+                    result = await Runner.run(starting_agent=agent, input=chat.message)
+
+
+
+        elif chat.type=="resources":
+            logging.info("===== RESOURCES ======")
+            # ========== RESOURCES ========
+            resources_result = await mcp_server.list_resources()
+            openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+            first_uri = resources_result.resources[0].uri
+            read_result = await mcp_server.read_resource(uri=first_uri)
+            text_content = read_result.contents[0].text
+
+            chat = openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": f"If asked about Rulebooks reference your answers from the following content: \n\n{ text_content }"},
+                    {"role": "user",   "content": f"{ chat.message }"}
+                ],
+                max_tokens=300
+            )
+
+            # Extract the assistant’s reply
+            summary = chat.choices[0].message.content
+            logging.info(f"summary: {summary}")
+            result= {"final_output": summary}
+
 
         return {"response": result.final_output}
 

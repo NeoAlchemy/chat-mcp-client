@@ -3,3 +3,4 @@ uvicorn
 mcp
 ping3
 openai-agents
+openai
