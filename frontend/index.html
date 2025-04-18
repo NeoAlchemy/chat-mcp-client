@@ -46,7 +46,7 @@
             const response = await fetch("/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: userMessage , type: "tools"})
+                body: JSON.stringify({ message: userMessage , type: "resources"}) // "tools", "resources"
             });
 
             const data = await response.json();
