@@ -1,6 +1,12 @@
 import logging
 import sys
 import os
+import base64
+import io
+import time
+import asyncio
+
+from PyPDF2 import PdfReader
 from ping3 import ping
 
 from mcp.client.session import ClientSession
@@ -20,80 +26,206 @@ from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     message: str
-    type: str
+
+class ChatResponse(BaseModel):
+    final_output: str
 
 app = FastAPI()
+openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(levelname)s:     [applogs] %(message)s')
-    
+activities_assistant_id = ""
+activities_thread_id = ""
+
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
+    global activities_assistant_id 
+
+    # RESOURCES
+    file_contents = await get_resources()
+
+    # TOOLS
+    tools = await get_tools()
+
+    #vector_store_id = upload_file_to_vector("rulebook vector store", pdf_file)
+    #logging.info(f"vector_store_id: {vector_store_id}")
+
+    activities_assistant_id = create_assistant(tools=tools, file_contents=file_contents)
+
     with open("frontend/index.html", "r") as f:
         return HTMLResponse(content=f.read())
+    
     
 
 @app.post("/chat")
 async def chat_endpoint(chat: ChatRequest):
+    global activities_assistant_id 
     try:
-        if chat.type=="tools":
-            result = await openai_agent_weather_tools(chat.message)
-
-        elif chat.type=="resources":
-            result = await openai_agent_book_resources(chat.message)
-
-
-        return {"response": result.final_output}
+        
+        result = await openai_agent_family_activities(chat.message)
+        
+        return {"response": result}
 
     except Exception as e:
         logging.info(f"Exception: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+@app.get("/prompts")
+async def get_prompt_suggestions():
+    return {
+        "prompts": await get_prompts()
+    }
+
+async def openai_agent_family_activities(message: str) -> str:
+    
+    activities_run_id = run_threads(message=message)
+
+    await wait_for_completion(activities_run_id)
+
+    # Now get the messages from the thread
+    message_content = get_assistant_reply(run_id=activities_run_id)
+    
+    return message_content.value
+
+# UTILITIES METHODS
+        
+def upload_file_to_vector(vector_store_name: str, file_obj) -> str:
+    # Create a vector store caled "Financial Statements"
+    vector_store = openai.vector_stores.create(name=vector_store_name)
+
+    # Use the upload and poll SDK helper to upload the files, add them to the vector store,
+    # and poll the status of the file batch for completion.
+    file_batch = openai.vector_stores.file_batches.upload_and_poll(
+        vector_store_id=vector_store.id, 
+        files=[file_obj]
+    )
+    return vector_store.id
+
+def create_assistant(tools: any, file_contents: str) -> str:
+    assistant = openai.beta.assistants.create(
+        name="Family Activities Assistant",
+        instructions=f"Reference this csv data and the tools to answer any questions the user has.  \
+                    If you don't have enough information please ask clarifying questions to get the answer. \
+                    you will need to know how many adults and children and all the ages \
+                    \n\n{file_contents}",
+        tools=tools,
+        model="gpt-4o",  # or gpt-4-turbo
+    )
+    logging.info(f"assistant created: {assistant}")
+    return assistant.id
+
+def run_threads(message: str) -> str:
+    global activities_thread_id
+
+    if activities_thread_id == "":
+        threads = openai.beta.threads.create()
+        activities_thread_id = threads.id
+
+    openai.beta.threads.messages.create(
+        thread_id=activities_thread_id,
+        role="user",
+        content=message
+    )
+    logging.info(f"thread created: {activities_thread_id}")
+    
+    run = openai.beta.threads.runs.create(
+        thread_id=activities_thread_id,
+        assistant_id=activities_assistant_id
+    )
+    logging.info(f"run created: {run}")
+    
+    return run.id
+
+async def wait_for_completion(run_id: str):
+    global activities_thread_id
+    start_time = time.time()
+    timeout = 30  # seconds
+
+    while True:
+        run_status = openai.beta.threads.runs.retrieve(
+            thread_id=activities_thread_id,
+            run_id=run_id
+        )
+        if run_status.status in ["completed", "failed", "cancelled"]:
+            break
+
+        if time.time() - start_time > timeout:
+            logging.warning("Timeout reached. Cancelling the run...")
+            openai.beta.threads.runs.cancel(
+                thread_id=activities_thread_id,
+                run_id=run_id
+            )
+            raise TimeoutError("The run was cancelled after exceeding the timeout.")
+
+        await asyncio.sleep(1)
+
+    logging.info(f"Run done: {run_status.status}")
 
 
-async def openai_agent_weather_tools(message: str) -> dict:
+def get_assistant_reply(run_id: str) -> any:
+    global activities_thread_id
+    messages = list(openai.beta.threads.messages.list(thread_id=activities_thread_id, run_id=run_id))
+    logging.info(f"run done: {messages}")
+
+
+    # The assistant's reply is usually the last message
+    message_content = messages[0].content[0].text
+    return message_content
+
+def mcp_tool_to_openai(tool: dict) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.inputSchema,
+        }
+    }
+
+async def get_tools() -> list[any]:
     async with MCPServerSse(
-        name="SSE Python Server",
+        name="Activities Server",
         params={
             "url": "http://mcp-server:8001/sse",
         },
     ) as mcp_server:
         trace_id = gen_trace_id()
-        with trace(workflow_name="Weather Tool", trace_id=trace_id):
-            print(f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}\n")  
-            agent = Agent(
-                name="Assistant",
-                instructions="Only use tools when absolutely necessary to complete \
-                    the user's request. If the answer is available in context or \
-                    from your training, respond directly without tools.",
-                mcp_servers=[mcp_server],
-                model_settings=ModelSettings(tool_choice="auto"),
-            )
-            return await Runner.run(starting_agent=agent, input=message)
+        with trace(workflow_name="Activities Server", trace_id=trace_id):
+            print(f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}\n")
+            tools = await mcp_server.list_tools()
+            print(tools)
+            openai_tools = [mcp_tool_to_openai(tool) for tool in tools]
+            print(openai_tools)
+            return openai_tools
 
-async def openai_agent_book_resources(message: str) -> dict:
-        async with sse_client( url="http://mcp-server:8001/sse" ) as (read, write):
-            logging.info("Connected.")
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                resources_result = await session.list_resources()
-                logging.info(f"what are the resources {resources_result}")
-                openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-                first_uri = resources_result.resources[0].uri
-                read_result = await session.read_resource(uri=first_uri)
-                text_content = read_result.contents[0].text
+async def get_resources() -> str:
+    async with sse_client( url="http://mcp-server:8001/sse" ) as (read, write):
+        logging.info("Connected.")
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            resources_result = await session.list_resources()
+            logging.info(f"what are the resources {resources_result}")
+            first_uri = resources_result.resources[0].uri
+            read_result = await session.read_resource(uri=first_uri)
+            return read_result.contents[0].text 
+        
 
-                chat = openai.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": f"If asked about Rulebooks reference your answers from the following content: \n\n{ text_content }"},
-                        {"role": "user",   "content": f"{ message }"}
-                    ],
-                    max_tokens=300
-                )
 
-                # Extract the assistant’s reply
-                summary = chat.choices[0].message.content
-                logging.info(f"summary: {summary}")
-                return {"final_output": summary}
+async def get_prompts() -> str:
+    async with sse_client( url="http://mcp-server:8001/sse" ) as (read, write):
+        logging.info("Connected.")
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            prompt_results = await session.list_prompts()
+            logging.info(f"What are the prompts: {prompt_results}")
+
+            prompt_texts = []
+            for prompt in prompt_results.prompts:
+                prompt_text = await session.get_prompt(prompt.name)
+                logging.info(f"prompt_text: {prompt_text}")
+                prompt_texts.append(prompt_text.messages[0].content.text)
+
+            return prompt_texts
+        

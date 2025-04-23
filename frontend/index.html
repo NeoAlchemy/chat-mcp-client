@@ -7,9 +7,13 @@
     <link rel="stylesheet" href="/static/chat-ui.css">
 </head>
 <body>
+<header class="chat-header">
+    <h1>👨‍👩‍👧‍👦 Chat with OpenAI GPT-4o</h1>
+    <p>Family Activities Assistant – Ask anything about fun, bonding, and adventures!</p>
+</header>
 <div class="chat-container">
     <div id="chat-history" class="chat-history"></div>
-
+    <div id="prompt-box" class="prompt-grid"></div>
     <div class="chat-input">
         <input id="message" type="text" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendMessage()">
         <button onclick="sendMessage()">Send</button>
@@ -19,6 +23,8 @@
 <script>
     const userAvatar = "https://api.dicebear.com/9.x/adventurer/svg?size=80&seed=Maria"; // Human-like avatar
     const botAvatar = "https://api.dicebear.com/9.x/bottts/svg?size=80&seed=Ryan";
+    const promptBox = document.getElementById("prompt-box");
+
 
     function getTimestamp() {
         const now = new Date();
@@ -30,6 +36,9 @@
         const chatHistory = document.getElementById("chat-history");
         const userMessage = input.value.trim();
         if (!userMessage) return;
+
+        // Hide prompt box on send
+        if (promptBox) promptBox.classList.add("fade-out");
 
         // User message
         const userBubble = createMessage(userMessage, userAvatar, "user");
@@ -159,6 +168,44 @@
         scrollToBottom();
         return status;
     }
+
+    function usePrompt(text) {
+        const input = document.getElementById("message");
+        const promptBox = document.getElementById("prompt-box");
+        input.value = text;
+        if (promptBox) promptBox.style.display = "none";
+        sendMessage();
+    }
+
+    document.getElementById("message").addEventListener("keydown", (e) => {
+        const promptBox = document.getElementById("prompt-box");
+        if (e.key === "Enter") {
+            if (promptBox) promptBox.style.display = "none";
+            sendMessage();
+        }
+    });
+
+    window.addEventListener("DOMContentLoaded", async () => {
+        try {
+            const response = await fetch("/prompts");
+            const data = await response.json();
+            const prompts = data.prompts || [];
+
+            const promptBox = document.getElementById("prompt-box");
+            if (promptBox && prompts.length) {
+                prompts.forEach(promptText => {
+                    const card = document.createElement("div");
+                    card.className = "prompt-card";
+                    card.textContent = promptText;
+                    card.onclick = () => usePrompt(promptText);
+                    promptBox.appendChild(card);
+                });
+            }
+        } catch (error) {
+            console.error("Error fetching prompts:", error);
+        }
+    });
+
 </script>
 </body>
 </html>
