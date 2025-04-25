@@ -12,23 +12,51 @@
     <p>Family Activities Assistant – Ask anything about fun, bonding, and adventures!</p>
 </header>
 <div class="chat-container">
-    <div id="chat-history" class="chat-history"></div>
-    <div id="prompt-box" class="prompt-grid"></div>
-    <div class="chat-input">
-        <input id="message" type="text" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendMessage()">
-        <button onclick="sendMessage()">Send</button>
+    <div id="intro-form" class="intro-form">
+        <b>Tell us about your family!</b>
+        <label>Adults: <input type="number" id="num-adults" min="1"></label>
+        <label>Children: <input type="number" id="num-children" min="0"></label>
+        <label>Children's Ages: <input type="text" id="child-ages" placeholder="e.g. 4, 8, 12"></label>
+        <label>Your Locaiton: <input type="text" id="location" placeholder="Keller, TX"></label>
+        <button onclick="submitFamilyInfo()">Start Chat</button>
+    </div>
+    <div id="chat-area" style="display: none;">
+        <div id="chat-history" class="chat-history"></div>
+        <div id="prompt-box" class="prompt-grid"></div>
+        <div class="chat-input">
+            <input id="message" type="text" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendMessage()">
+            <button onclick="sendMessage()">Send</button>
+        </div>
     </div>
 </div>
 
 <script>
-    const userAvatar = "https://api.dicebear.com/9.x/adventurer/svg?size=80&seed=Maria"; // Human-like avatar
+
+    const userAvatar = "https://api.dicebear.com/9.x/adventurer/svg?size=80&seed=Maria";
     const botAvatar = "https://api.dicebear.com/9.x/bottts/svg?size=80&seed=Ryan";
     const promptBox = document.getElementById("prompt-box");
-
 
     function getTimestamp() {
         const now = new Date();
         return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function submitFamilyInfo() {
+        const adults = document.getElementById("num-adults").value;
+        const children = document.getElementById("num-children").value;
+        const ages = document.getElementById("child-ages").value;
+        const location = document.getElementById("location").value;
+        const summary = `We are a family with ${adults} adults and ${children} children. The children's ages are ${ages}.  I live at ${location}`;
+        document.getElementById("intro-form").style.display = "none";
+        document.getElementById("chat-area").style.display = "contents";
+
+        fetch("/context", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: summary })
+        });
+
+        
     }
 
     async function sendMessage() {
@@ -37,14 +65,11 @@
         const userMessage = input.value.trim();
         if (!userMessage) return;
 
-        // Hide prompt box on send
         if (promptBox) promptBox.classList.add("fade-out");
 
-        // User message
         const userBubble = createMessage(userMessage, userAvatar, "user");
         chatHistory.appendChild(userBubble);
 
-        // Typing indicator
         const typingBubble = createTypingIndicator("dots");
         chatHistory.appendChild(typingBubble);
         scrollToBottom();
@@ -55,31 +80,23 @@
             const response = await fetch("/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: userMessage , type: "resources"}) // "tools", "resources"
+                body: JSON.stringify({ message: userMessage, type: "resources" })
             });
 
             const data = await response.json();
-
-            if (!response.ok || !data.response) {
-                throw new Error("Invalid response from server");
-            }
+            if (!response.ok || !data.response) throw new Error("Invalid response");
 
             const markdown = marked.parse(data.response || "⚠️ No response");
             const botBubble = createMessage(markdown, botAvatar, "bot", true);
-
             chatHistory.replaceChild(botBubble, typingBubble);
         } catch (error) {
-            // Remove typing bubble before showing error
             chatHistory.removeChild(typingBubble);
-
-            // Insert status/error message
             insertStatusMessage("❌ Failed to fetch response.");
             console.error("Fetch error:", error);
         }
 
         scrollToBottom();
     }
-
 
     function createMessage(content, avatarUrl, role, isHTML = false) {
         const wrapper = document.createElement("div");
@@ -94,11 +111,7 @@
 
         const bubble = document.createElement("div");
         bubble.className = "message-bubble";
-        if (isHTML) {
-            bubble.innerHTML = content;
-        } else {
-            bubble.textContent = content;
-        }
+        isHTML ? bubble.innerHTML = content : bubble.textContent = content;
 
         const timestamp = document.createElement("span");
         timestamp.className = "timestamp";
@@ -106,9 +119,9 @@
 
         container.appendChild(bubble);
         container.appendChild(timestamp);
-
         wrapper.appendChild(avatar);
         wrapper.appendChild(container);
+
         return wrapper;
     }
 
@@ -121,7 +134,6 @@
         avatar.src = botAvatar;
 
         let bubble;
-
         if (style === "dots") {
             bubble = document.createElement("div");
             bubble.className = "typing-indicator";
@@ -139,7 +151,6 @@
                 bubble.appendChild(bar);
             }
         } else {
-            // Gradient shimmer style
             bubble = document.createElement("div");
             bubble.className = "typing-gradient";
             bubble.textContent = "Typing";
@@ -152,7 +163,6 @@
         container.appendChild(bubble);
         return container;
     }
-
 
     function scrollToBottom() {
         const chatHistory = document.getElementById("chat-history");
@@ -171,14 +181,12 @@
 
     function usePrompt(text) {
         const input = document.getElementById("message");
-        const promptBox = document.getElementById("prompt-box");
         input.value = text;
         if (promptBox) promptBox.style.display = "none";
         sendMessage();
     }
 
     document.getElementById("message").addEventListener("keydown", (e) => {
-        const promptBox = document.getElementById("prompt-box");
         if (e.key === "Enter") {
             if (promptBox) promptBox.style.display = "none";
             sendMessage();
@@ -191,7 +199,6 @@
             const data = await response.json();
             const prompts = data.prompts || [];
 
-            const promptBox = document.getElementById("prompt-box");
             if (promptBox && prompts.length) {
                 prompts.forEach(promptText => {
                     const card = document.createElement("div");
@@ -205,7 +212,7 @@
             console.error("Error fetching prompts:", error);
         }
     });
-
+  
 </script>
 </body>
 </html>

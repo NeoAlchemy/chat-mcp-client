@@ -36,17 +36,23 @@ app.mount("/static", StaticFiles(directory="frontend"), name="static")
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(levelname)s:     [applogs] %(message)s')
 activities_assistant_id = ""
 activities_thread_id = ""
+chat_history
 
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     global activities_assistant_id 
+    global chat_history
 
     # RESOURCES
     file_contents = await get_resources()
 
     # TOOLS
     tools = await get_tools()
+
+    chat_history = []
+
+
 
     #vector_store_id = upload_file_to_vector("rulebook vector store", pdf_file)
     #logging.info(f"vector_store_id: {vector_store_id}")
@@ -64,7 +70,7 @@ async def chat_endpoint(chat: ChatRequest):
     try:
         
         result = await openai_agent_family_activities(chat.message)
-        
+
         return {"response": result}
 
     except Exception as e:
@@ -105,10 +111,29 @@ def upload_file_to_vector(vector_store_name: str, file_obj) -> str:
 def create_assistant(tools: any, file_contents: str) -> str:
     assistant = openai.beta.assistants.create(
         name="Family Activities Assistant",
-        instructions=f"Reference this csv data and the tools to answer any questions the user has.  \
-                    If you don't have enough information please ask clarifying questions to get the answer. \
-                    you will need to know how many adults and children and all the ages \
-                    \n\n{file_contents}",
+        instructions=f"""
+You are a Family Activity Planner, you use tools and GPT-4o architecture.  
+Your have a CSV file that contains all activities you want to present.
+
+When you see a message that contains a question about activities you are to 
+generate responses based on the CSV list and use tools based on the question.
+
+Follow these guidance:
+
+1. If no location is given then assume the location is Fort Worth, TX
+2. if you don't know how many adults and kids and the kids ages then assume that this is for 1 adult and 0 kids.
+3. In your response repeat the location if providing distance information
+4. In your response repeat kids and adult count if being asked about total cost
+
+Your personality is to be funny and charming. make sure your personality follows these guidelines:
+- Be informative and comprehensive.
+- Do not take more than 30 seconds to process
+- if you can't come up with an answer ask questions or state why you couldn't answer the question.
+
+Here is the CSV contents: 
+
+{file_contents}
+        """,
         tools=tools,
         model="gpt-4o",  # or gpt-4-turbo
     )
@@ -140,7 +165,7 @@ def run_threads(message: str) -> str:
 async def wait_for_completion(run_id: str):
     global activities_thread_id
     start_time = time.time()
-    timeout = 30  # seconds
+    timeout = 120  # seconds
 
     while True:
         run_status = openai.beta.threads.runs.retrieve(

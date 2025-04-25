@@ -332,3 +332,53 @@ body {
     transition: opacity 0.3s ease;
     pointer-events: none;
 }
+
+.intro-form {
+    background-color: #f9f9f9;
+    border-radius: 1rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    max-width: 400px;
+    margin: 2rem auto;
+    padding: 2rem;
+    font-family: sans-serif;
+  }
+  
+  .intro-form h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    text-align: center;
+    color: #333;
+  }
+  
+  .intro-form label {
+    display: block;
+    margin-bottom: 1rem;
+    color: #555;
+    font-size: 0.95rem;
+  }
+  
+  .intro-form input[type="number"],
+  .intro-form input[type="text"] {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+  }
+  
+  .intro-form button {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    font-size: 1rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .intro-form button:hover {
+    background-color: #0056b3;
+  }
+  
